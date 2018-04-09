@@ -80,7 +80,8 @@ class TrezorInteraction extends Component {
         myWorker.postMessage({index: i, chainCode, publicKey, ethereum: NETWORK_LIST.ethereum })
       }
       myWorker.onmessage = (e) => {
-        addresses.push(e)
+        addresses.push(e.data)
+        console.log(e)
         count++
         if ((count % 10) === 0) {
           console.log("Address: ", i)
