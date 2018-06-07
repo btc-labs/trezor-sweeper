@@ -1,4 +1,5 @@
 import React, { Component } from 'react'
+import Worker from './getAddresses.worker.js';
 
 import {
   Button,
@@ -11,11 +12,9 @@ import {
 } from 'semantic-ui-react'
 
 const fetch = require("node-fetch")
-var bitcoin = require('bitcoinjs-lib')
 var eu = require('ethereumjs-util')
 var etx = require('ethereumjs-tx')
 const stripHexPrefix = require('strip-hex-prefix')
-
 const NETWORK_LIST = {
   ethereum: {
     messagePrefix: '\x19Ethereum Signed Message:\n',
@@ -29,7 +28,6 @@ const NETWORK_LIST = {
     ethereum : true
   }
 }
-
 class TrezorInteraction extends Component {
   
   state = {
@@ -67,27 +65,35 @@ class TrezorInteraction extends Component {
     this.setState({publicKey: publicKey})
     this.setProgress('Public Key extracted')
   }
-
-  generateAddresses = async (publicKey, chainCode) => {
-    const neuteredKeyPair = bitcoin.ECPair.fromPublicKeyBuffer(Buffer.from(publicKey, 'hex'), NETWORK_LIST.ethereum)
-    const neutered = new bitcoin.HDNode(neuteredKeyPair, Buffer.from(chainCode, 'hex'))
-    var addresses = []
-
-    for (var i = this.state.pageSize*this.state.offset; i < (this.state.pageSize*this.state.offset + this.state.pageSize); i++) {
-      
-      var publicKeyBuffer = neutered.derivePath("0/"+i).getPublicKeyBuffer()
-      var addr_buf = eu.pubToAddress(publicKeyBuffer, true)
-      var addr = addr_buf.toString('hex')
-      addresses.push(eu.toChecksumAddress(addr))
-      // console.log(eu.toChecksumAddress(addr))
-      if ((i % 10) === 0) {
-        console.log("Address: ", i)
-        this.setProgress(`Generated ${i} addresses`)
+  generateAddresses = (publicKey, chainCode) => {
+      let addresses = []
+      let count = 0 
+      let myWorker
+      const length = (this.state.pageSize*this.state.offset + this.state.pageSize)
+      try  {
+        myWorker = new Worker()
+      } catch(e) {
+        throw new Error('Web workers unsupported')
       }
-    }
-    this.setState({addresses: addresses, home: addresses[0]})
-    this.setProgress(`Ready to fetch balances from Etherscan`)
+      for (var i = this.state.pageSize*this.state.offset; i < (length); i++) {
+        
+        myWorker.postMessage({index: i, chainCode, publicKey, ethereum: NETWORK_LIST.ethereum })
+      }
+      myWorker.onmessage = (e) => {
+        addresses.push(e.data)
+        console.log(e)
+        count++
+        if ((count % 10) === 0) {
+          console.log("Address: ", i)
+          this.setProgress(`Generated ${count} addresses`)
+        }
+        if (addresses.length === length) {
+          this.setState({addresses: addresses, home: addresses[0]})
+          this.setProgress(`Ready to fetch balances from Etherscan`)
+        }
+      }
   }
+  
 
   sleep = async (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
